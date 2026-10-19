@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Himanshu & Tamako: Cozy Valley</title>
+<style>
+  :root { --ink:#352b3a; --cream:#fff3d8; --pink:#ffb9cf; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#292638; color:var(--cream); font-family:system-ui,-apple-system,sans-serif; display:flex; min-height:100vh; align-items:center; justify-content:center; padding:18px; }
+  .wrap { width:min(100%, 960px); }
+  h1 { margin:0 0 5px; text-align:center; font-size:clamp(22px,4vw,34px); color:#ffe5a7; text-shadow:3px 3px #70475d; }
+  .sub { text-align:center; margin:0 0 12px; color:#f8c9d8; font-size:14px; }
+  .gamebox { border:5px solid #e9c99a; border-radius:12px; overflow:hidden; box-shadow:0 12px 0 #171521; background:#7bc96f; }
+  canvas { display:block; width:100%; height:auto; image-rendering:pixelated; }
+  .hud { display:flex; gap:10px; justify-content:space-between; flex-wrap:wrap; padding:10px 2px; font-weight:700; }
+  .pill { background:#40354b; border:2px solid #76617c; border-radius:9px; padding:7px 11px; }
+  .controls { color:#e8d9f0; font-size:13px; text-align:center; line-height:1.7; }
+  button { border:0; border-radius:10px; padding:10px 14px; font-weight:800; cursor:pointer; background:#ffcf80; color:#34263b; }
+  .bottom { display:flex; justify-content:center; gap:8px; margin:10px 0; flex-wrap:wrap; }
+  .mobile { display:none; grid-template-columns:repeat(3,52px); gap:6px; justify-content:center; margin:14px auto 0; }
+  .mobile button { padding:13px 0; font-size:18px; touch-action:manipulation; }
+  #fireBtn { background:#ff8b63; color:#3d202b; }
+  @media (pointer:coarse) { .mobile { display:grid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌼 Himanshu & Tamako: Cozy Valley</h1>
+  <p class="sub">A tiny 2D pixel adventure • explore, collect flowers, and watch out for Narangi!</p>
+  <div class="gamebox"><canvas id="game" width="800" height="500" aria-label="Cozy Valley game"></canvas></div>
+  <div class="hud">
+    <div class="pill" id="hearts">❤️❤️❤️</div>
+    <div class="pill" id="flowers">🌼 Flowers: 0 / 8</div>
+    <div class="pill" id="status">Day 1 • Cozy weather</div>
+  </div>
+  <div class="bottom">
+    <button id="talkBtn">E — Talk to Tamako</button>
+    <button id="fireBtn">🔥 Fireball (click)</button>
+    <button id="mapBtn">M — Map / Help</button>
+    <button id="restartBtn">↻ Restart</button>
+  </div>
+  <div class="controls">Move: WASD / Arrow keys · Click Fireball or press F · E / Space to talk or collect · M for map · Narangi fires back!</div>
+  <div class="mobile">
+    <span></span><button data-key="ArrowUp">▲</button><span></span>
+    <button data-key="ArrowLeft">◀</button><button data-key="ArrowDown">▼</button><button data-key="ArrowRight">▶</button>
+  </div>
+</div>
+<script>
+(() => {
+const canvas = document.getElementById('game'), ctx = canvas.getContext('2d');
+const W=canvas.width,H=canvas.height,T=32;
+let keys={}, hearts=3, collected=0, message="Welcome to Cozy Valley, Himanshu! Find Tamako and collect flowers.", messageTimer=220, showMap=false, invuln=0, gameOver=false, won=false;
+const player={x:370,y:270,w:20,h:25,speed:2.5};
+const tamako={x:465,y:260,w:22,h:26,dir:1};
+let narangis=[]; let wave=1, kills=0, enemyFireTimer=80; let fireballs=[]; let enemyFireballs=[];
+function spawnWave(count){narangis=[];for(let i=0;i<count;i++){narangis.push({x:610+(i%3)*45,y:115+Math.floor(i/3)*45,w:25,h:25,speed:0.72+wave*0.06,stun:0,hp:1,fireTimer:70+i*35,id:Math.random()});}}
+spawnWave(1);
+const flowers=[{x:150,y:150},{x:220,y:355},{x:325,y:115},{x:545,y:350},{x:700,y:300},{x:100,y:260},{x:420,y:410},{x:590,y:90}].map(f=>({...f,got:false}));
+const pond={x:535,y:205,w:180,h:100};
+const trees=[ [45,65],[90,80],[155,65],[245,75],[320,70],[410,65],[500,65],[745,75],[760,160],[760,410],[690,440],[80,440],[40,350],[270,445],[470,455],[740,350] ];
+function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+function text(t,x,y,size=16,color='#fff3d8'){ctx.font=`bold ${size}px system-ui`;ctx.fillStyle='#49354a';ctx.fillText(t,x+2,y+2);ctx.fillStyle=color;ctx.fillText(t,x,y)}
+function drawTree(x,y){rect(x-8,y+8,18,23,'#89563c');rect(x-17,y-5,36,27,'#2c8958');rect(x-12,y-13,27,20,'#48a85d');rect(x-5,y-10,6,5,'#79c96c')}
+function drawPerson(x,y,kind){ // pixel-ish characters
+ if(kind==='him'){
+  rect(x-8,y+7,7,13,'#293d75');rect(x+2,y+7,7,13,'#293d75');rect(x-9,y+18,9,5,'#49354a');rect(x+1,y+18,10,5,'#49354a');
+  rect(x-10,y-2,21,15,'#4e91d1');rect(x-7,y-13,16,14,'#f1bc91');rect(x-9,y-17,19,7,'#3c2c3e');rect(x-11,y-12,5,8,'#3c2c3e');rect(x+7,y-12,5,7,'#3c2c3e');rect(x-3,y-7,2,2,'#352b3a');rect(x+4,y-7,2,2,'#352b3a');
+ } else if(kind==='tam'){
+  rect(x-7,y+8,6,12,'#f5c4dc');rect(x+2,y+8,6,12,'#f5c4dc');rect(x-10,y+18,9,5,'#6b476d');rect(x+1,y+18,10,5,'#6b476d');rect(x-10,y-2,21,14,'#f7a9c8');rect(x-7,y-13,16,14,'#f4c19a');rect(x-10,y-17,20,9,'#7a463e');rect(x-11,y-12,5,9,'#7a463e');rect(x+7,y-13,5,9,'#7a463e');rect(x+3,y-14,5,5,'#ffe78a');rect(x-3,y-7,2,2,'#352b3a');rect(x+4,y-7,2,2,'#352b3a');
+ } else {
+  // Narangi: grumpy orange fruit villain
+  rect(x-12,y-11,24,23,'#f58a2c');rect(x-8,y-15,16,7,'#f58a2c');rect(x-4,y-19,8,6,'#4a9b50');rect(x-2,y-22,11,4,'#328249');rect(x-8,y-3,5,4,'#2c2030');rect(x+3,y-3,5,4,'#2c2030');rect(x-8,y-5,7,2,'#2c2030');rect(x+2,y-5,7,2,'#2c2030');rect(x-4,y+5,9,3,'#8b332b');rect(x-16,y+2,5,8,'#e87528');rect(x+11,y+2,5,8,'#e87528');rect(x-7,y+12,5,5,'#513248');rect(x+4,y+12,5,5,'#513248');
+ }
+}
+function draw(){
+ // grass tiles
+ rect(0,0,W,H,'#78c96c');
+ for(let y=0;y<H;y+=T) for(let x=0;x<W;x+=T){
+  if(((x/T*3+y/T*5)%7)===0) rect(x+7,y+8,3,3,'#a0db78');
+  if(((x/T+y/T*2)%9)===0) rect(x+22,y+20,2,2,'#4daa5e');
+ }
+ // paths
+ rect(0,235,W,62,'#e8c58b');rect(345,0,62,H,'#e8c58b');
+ // house
+ rect(90,82,130,75,'#b56b49');rect(80,75,150,18,'#78464b');rect(103,94,104,58,'#ffe0a0');rect(145,115,27,37,'#8b5948');rect(112,104,18,17,'#8fd5e5');rect(181,104,18,17,'#8fd5e5');rect(155,129,4,4,'#ffe5a7');
+ // garden beds
+ rect(90,350,135,60,'#936247');for(let x=100;x<220;x+=24)for(let y=360;y<405;y+=20){rect(x,y,13,9,'#45964f');rect(x+4,y-3,5,5,'#ffbf6b')}
+ // pond
+ rect(pond.x,pond.y,pond.w,pond.h,'#459dc7');rect(pond.x+8,pond.y+7,pond.w-16,pond.h-14,'#67c4df');rect(pond.x+28,pond.y+20,20,3,'#b6f0f0');rect(pond.x+90,pond.y+65,27,3,'#b6f0f0');
+ // bridge
+ rect(580,260,82,35,'#a66b3e');for(let x=585;x<660;x+=14)rect(x,260,4,35,'#dba56b');rect(580,258,82,5,'#7d4c39');rect(580,292,82,5,'#7d4c39');
+ // fences
+ for(let x=250;x<340;x+=20){rect(x,340,4,32,'#99603c');rect(x,347,15,4,'#c18b55')}
+ // trees and flowers
+ trees.forEach(t=>drawTree(...t));
+ flowers.forEach(f=>{if(!f.got){rect(f.x-2,f.y,4,10,'#368e4d');rect(f.x-5,f.y-4,5,5,'#ff9dc4');rect(f.x+1,f.y-5,5,5,'#ffe77c');rect(f.x-1,f.y-1,4,4,'#ffefb5')}});
+ // characters
+ drawPerson(tamako.x,tamako.y,'tam');
+ narangis.forEach(n=>drawPerson(n.x,n.y,'nar'));
+ fireballs.forEach(b=>{ctx.beginPath();ctx.fillStyle='#ff6d38';ctx.arc(b.x,b.y,7,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.fillStyle='#ffe89a';ctx.arc(b.x-2,b.y-2,3,0,Math.PI*2);ctx.fill()});
+ enemyFireballs.forEach(b=>{ctx.beginPath();ctx.fillStyle='#bd5cff';ctx.arc(b.x,b.y,7,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.fillStyle='#ffd0f4';ctx.arc(b.x-2,b.y-2,3,0,Math.PI*2);ctx.fill()});
+ drawPerson(player.x,player.y,'him');
+ // tiny name tags
+ text('Tamako',tamako.x-28,tamako.y-28,11,'#fff0f6');
+ text(`Narangi wave ${wave}`,narangis[0]?.x-35||600,(narangis[0]?.y||160)-31,11,'#fff0b7');
+ if(invuln>0 && Math.floor(invuln/6)%2===0){rect(player.x-13,player.y-26,28,54,'#ffffff44')}
+ if(showMap){rect(180,65,440,360,'#fff0d4');rect(190,75,420,340,'#e8c58b');text('COZY VALLEY MAP',290,110,22,'#49354a');rect(235,145,330,220,'#91cf78');rect(375,145,25,220,'#e8c58b');rect(235,245,330,25,'#e8c58b');rect(430,230,100,65,'#5db8d5');rect(270,170,55,35,'#b56b49');text('Himanshu = blue',260,395,14,'#49354a');text('Tamako = pink • Narangi = orange',260,415,13,'#49354a');}
+ if(messageTimer>0 && message){rect(15,H-67,W-30,53,'#fff1d9');rect(15,H-67,W-30,4,'#f3a7c2');text(message,28,H-35,14,'#49354a');}
+ if(gameOver||won){rect(150,150,500,190,'#fff0d4');rect(160,160,480,170,'#e9c99a');text(won?'VALLEY HERO! 🌼':'OH NO, NARANGI GOT YOU!',205,205,23,'#49354a');text(won?'You collected every flower. Cozy legend!':'Take a breath and try again, Himanshu!',205,242,15,'#49354a');text('Press R or click Restart to play again',225,285,15,'#49354a');}
+}
+function setMessage(m){message=m;messageTimer=190}
+function near(a,b,d=48){return Math.hypot(a.x-b.x,a.y-b.y)<d}
+function interact(){
+ if(gameOver||won)return;
+ if(near(player,tamako,55)){setMessage('Tamako: Hey Himanshu! The valley looks lovely today. Can you collect 8 flowers? 💗');return}
+ let found=null; for(const f of flowers){if(!f.got&&Math.hypot(player.x-f.x,player.y-f.y)<25){found=f;break}}
+ if(found){found.got=true;collected++;setMessage('Flower collected! 🌼 Keep exploring, Himanshu.');if(collected===flowers.length){won=true;setMessage('You did it! Tamako is so proud of you! 🌸')}return}
+ if(narangis.some(n=>near(player,n,55))){setMessage('Narangi: Hehehe! Dodge my fireballs! 🍊');return}
+ setMessage('Explore the valley, talk to Tamako, and collect the little flowers!');
+}
+function reset(){player.x=370;player.y=270;tamako.x=465;tamako.y=260;hearts=3;collected=0;flowers.forEach(f=>f.got=false);message='Welcome back to Cozy Valley!';messageTimer=180;invuln=0;gameOver=false;won=false;showMap=false;wave=1;kills=0;fireballs=[];enemyFireballs=[];enemyFireTimer=80;spawnWave(1)}
+function shoot(){if(gameOver||won)return;let target=null,dist=Infinity;for(const n of narangis){const d=Math.hypot(n.x-player.x,n.y-player.y);if(d<dist){dist=d;target=n}}if(!target){setMessage('No Narangi nearby — get ready for the next wave!');return}let dx=target.x-player.x,dy=target.y-player.y,l=Math.hypot(dx,dy)||1;fireballs.push({x:player.x,y:player.y-8,vx:dx/l*5,vy:dy/l*5,life:90});setMessage('🔥 Himanshu launched a fireball!')}
+function enemyShoot(n){let dx=player.x-n.x,dy=player.y-n.y,l=Math.hypot(dx,dy)||1;enemyFireballs.push({x:n.x,y:n.y,vx:dx/l*2.2,vy:dy/l*2.2,life:150})}
+function update(){
+ if(!gameOver&&!won){
+  let dx=0,dy=0;
+  if(keys.ArrowLeft||keys.a||keys.A)dx--;if(keys.ArrowRight||keys.d||keys.D)dx++;if(keys.ArrowUp||keys.w||keys.W)dy--;if(keys.ArrowDown||keys.s||keys.S)dy++;
+  if(dx||dy){let l=Math.hypot(dx,dy);player.x+=dx/l*player.speed;player.y+=dy/l*player.speed;}
+  player.x=Math.max(20,Math.min(W-20,player.x));player.y=Math.max(30,Math.min(H-30,player.y));
+  // Keep movement gentle around the pond.
+  if(player.x>pond.x-12&&player.x<pond.x+pond.w+12&&player.y>pond.y-12&&player.y<pond.y+pond.h+12){player.x-=dx*player.speed;player.y-=dy*player.speed;player.x=Math.max(20,Math.min(W-20,player.x));player.y=Math.max(30,Math.min(H-30,player.y))}
+  // Tamako follows Himanshu, keeping a little friendly distance.
+  {let dx=player.x-tamako.x,dy=player.y-tamako.y,d=Math.hypot(dx,dy);if(d>48){tamako.x+=dx/d*1.75;tamako.y+=dy/d*1.75}else{tamako.x+=Math.sin(Date.now()/700)*.12;tamako.y+=Math.cos(Date.now()/900)*.12}}
+  // Narangi and every later wave chase Himanshu and shoot purple fireballs.
+  for(const n of narangis){if(n.stun>0)n.stun--;else{let vx=player.x-n.x,vy=player.y-n.y,d=Math.hypot(vx,vy);if(d>1){n.x+=vx/d*n.speed;n.y+=vy/d*n.speed}}n.x=Math.max(25,Math.min(W-25,n.x));n.y=Math.max(30,Math.min(H-25,n.y));if(--n.fireTimer<=0){enemyShoot(n);n.fireTimer=115+Math.random()*65}if(near(player,n,27)&&invuln===0){hearts--;invuln=100;n.stun=45;setMessage('Ouch! Narangi bumped you! Dodge those purple fireballs!');if(hearts<=0){gameOver=true;message='Narangi won this round!';}}}
+  for(const b of fireballs){b.x+=b.vx;b.y+=b.vy;b.life--;for(const n of narangis){if(!n.dead&&Math.hypot(b.x-n.x,b.y-n.y)<20){n.dead=true;b.life=0;kills++;setMessage('POW! Narangi defeated!');break}}}
+  fireballs=fireballs.filter(b=>b.life>0&&b.x>-10&&b.x<W+10&&b.y>-10&&b.y<H+10);
+  for(const b of enemyFireballs){b.x+=b.vx;b.y+=b.vy;b.life--;if(Math.hypot(b.x-player.x,b.y-player.y)<17&&invuln===0){hearts--;invuln=100;b.life=0;setMessage('Narangi fireball hit you! Keep moving!');if(hearts<=0){gameOver=true;message='Narangi won this round!'}}}
+  enemyFireballs=enemyFireballs.filter(b=>b.life>0&&b.x>-10&&b.x<W+10&&b.y>-10&&b.y<H+10);
+  narangis=narangis.filter(n=>!n.dead);
+  if(narangis.length===0&&!gameOver){wave++;spawnWave(wave);setMessage(`Wave ${wave}! ${wave} Narangi${wave===1?'':'s'} spawned!`)}
+  if(invuln>0)invuln--;
+ }
+ if(messageTimer>0)messageTimer--;
+ document.getElementById('hearts').textContent='❤️'.repeat(hearts)+'🖤'.repeat(3-hearts);
+ document.getElementById('flowers').textContent=`🌼 Flowers: ${collected} / ${flowers.length}`;
+ document.getElementById('status').textContent=won?'Valley Hero! ✨':'Day 1 • Cozy weather';
+ draw();requestAnimationFrame(update);
+}
+window.addEventListener('keydown',e=>{keys[e.key]=true;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();if(!e.repeat&&(e.key==='e'||e.key==='E'||e.key===' '))interact();if(!e.repeat&&(e.key==='m'||e.key==='M'))showMap=!showMap;if(!e.repeat&&(e.key==='f'||e.key==='F'))shoot();if(!e.repeat&&(e.key==='r'||e.key==='R'))reset()});
+window.addEventListener('keyup',e=>keys[e.key]=false);
+document.getElementById('talkBtn').onclick=interact;document.getElementById('fireBtn').onclick=shoot;document.getElementById('mapBtn').onclick=()=>showMap=!showMap;document.getElementById('restartBtn').onclick=reset;
+document.querySelectorAll('[data-key]').forEach(b=>{const k=b.dataset.key; b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false))});
+update();
+})();
+</script>
+</body>
+</html>
